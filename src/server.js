@@ -166,6 +166,16 @@ router.get("/job-offers", (req, res) => {
     });
   }
 
+  // createdAfter (inclusive) / createdBefore (exclusive) — per the contract.
+  const after = Date.parse(req.query.createdAfter ?? "");
+  if (!Number.isNaN(after)) {
+    items = items.filter((o) => new Date(o.createdAt).getTime() >= after);
+  }
+  const before = Date.parse(req.query.createdBefore ?? "");
+  if (!Number.isNaN(before)) {
+    items = items.filter((o) => new Date(o.createdAt).getTime() < before);
+  }
+
   // --- sort (with deterministic _seq tie-breaker) ---
   items.sort((a, b) => compareBy(a, b, sortField, desc));
 
@@ -399,6 +409,17 @@ router.put("/companies/:companyId/configuration", (req, res) => {
   }
 
   const body = req.body || {};
+  // The three flags are booleans in the contract. Reject non-booleans with 400
+  // (documented for this op) so the stored/returned config always conforms.
+  for (const flag of ["approvalRequired", "partialSaveEnabled", "manualPostingRequired"]) {
+    if (body[flag] !== undefined && typeof body[flag] !== "boolean") {
+      return error(res, 400, "BAD_REQUEST", `Invalid configuration: '${flag}' must be a boolean`, {
+        field: flag,
+        rejectedValue: body[flag],
+      });
+    }
+  }
+
   const updated = store.setConfig(companyId, {
     approvalRequired: body.approvalRequired,
     partialSaveEnabled: body.partialSaveEnabled,
