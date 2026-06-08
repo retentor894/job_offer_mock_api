@@ -200,7 +200,8 @@ npm run sqlz -- db:seed:all
 > `relation "Users" does not exist` or `column "userId" of relation "Articles" does
 > not exist`. Always start the app first (or just skip seeding).
 
-Then run the E2E suite with default URLs:
+`npm run dev` keeps that terminal busy (it stays running). Leave it open and, **in a
+new terminal**, run the E2E suite against the now-running app (default URLs):
 
 ```bash
 cd ../real_work_example_test_framework
