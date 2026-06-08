@@ -1,0 +1,7 @@
+node_modules/
+contract-tests/.venv-schemathesis/
+contract-tests/.hypothesis/
+.hypothesis/
+schemathesis-report/
+*.log
+.DS_Store

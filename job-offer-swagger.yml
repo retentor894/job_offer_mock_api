@@ -1,0 +1,1032 @@
+openapi: 3.1.0
+info:
+  title: Job Offer Microservice API
+  description: |
+    API for managing job offers in a staffing platform.
+
+    ## Overview
+    This microservice handles the complete lifecycle of job offers, from draft creation
+    through publication and closure. It supports configurable workflows per company,
+    including optional approval and manual posting steps.
+
+    ## Authentication
+    All endpoints require a valid `X-Company-Id` header identifying the company context.
+    Authentication is handled by an upstream gateway (not part of this service).
+
+    ## State Machine
+    Job offers follow a configurable state machine:
+    ```
+    DRAFT → [TO_FINALIZE] → [TO_APPROVE] → [TO_POST] → PUBLISHED → CLOSED
+    ```
+    Optional states (in brackets) are skipped when their corresponding feature is disabled.
+  version: 1.0.0
+  contact:
+    name: Platform Team
+    email: platform@example.com
+  license:
+    name: Proprietary
+
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Local development
+  - url: https://api.staging.example.com/job-offers/v1
+    description: Staging environment
+  - url: https://api.example.com/job-offers/v1
+    description: Production environment
+
+tags:
+  - name: Job Offers
+    description: Job offer CRUD and lifecycle operations
+  - name: Transitions
+    description: State transition operations
+  - name: Configuration
+    description: Company workflow configuration
+
+paths:
+  /job-offers:
+    get:
+      operationId: listJobOffers
+      summary: List and search job offers
+      description: |
+        Returns a paginated list of job offers with optional filtering and sorting.
+        Results are scoped to the company specified in the `X-Company-Id` header.
+      tags:
+        - Job Offers
+      parameters:
+        - $ref: "#/components/parameters/CompanyIdHeader"
+        - $ref: "#/components/parameters/PageNumber"
+        - $ref: "#/components/parameters/PageSize"
+        - name: status
+          in: query
+          description: Filter by one or more statuses
+          schema:
+            type: array
+            items:
+              $ref: "#/components/schemas/JobOfferStatus"
+          style: form
+          explode: true
+        - name: titleContains
+          in: query
+          description: Filter by title (case-insensitive partial match)
+          schema:
+            type: string
+            maxLength: 100
+        - name: locationCity
+          in: query
+          description: Filter by city (case-insensitive partial match)
+          schema:
+            type: string
+            maxLength: 100
+        - name: createdAfter
+          in: query
+          description: Filter offers created after this date (inclusive)
+          schema:
+            type: string
+            format: date-time
+        - name: createdBefore
+          in: query
+          description: Filter offers created before this date (exclusive)
+          schema:
+            type: string
+            format: date-time
+        - name: sort
+          in: query
+          description: |
+            Sort field and direction. Prefix with `-` for descending order.
+          schema:
+            type: string
+            enum:
+              - createdAt
+              - -createdAt
+              - updatedAt
+              - -updatedAt
+              - title
+              - -title
+              - publishedAt
+              - -publishedAt
+            default: -createdAt
+      responses:
+        "200":
+          description: Paginated list of job offers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobOfferPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    post:
+      operationId: createJobOffer
+      summary: Create a new job offer
+      description: |
+        Creates a new job offer in DRAFT status.
+
+        If `partialSaveEnabled` is true for the company, the offer can be created
+        with incomplete data and will transition to TO_FINALIZE status.
+
+        If `partialSaveEnabled` is false, all required fields must be provided.
+      tags:
+        - Job Offers
+      parameters:
+        - $ref: "#/components/parameters/CompanyIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateJobOfferRequest"
+            examples:
+              completeOffer:
+                summary: Complete job offer
+                value:
+                  title: "Senior Backend Developer"
+                  location:
+                    type: CUSTOM
+                    address:
+                      lines:
+                        - "123 Tech Street"
+                        - "Building A, Floor 3"
+                      postalCode: "75001"
+                      city: "Paris"
+                      region: "Île-de-France"
+                      countryCode: "FR"
+                  compensation:
+                    salaryEntries:
+                      - type: YEARLY
+                        amount: 65000.00
+                        currency: EUR
+                    bonusEntries:
+                      - type: SIGNING
+                        amount: 5000.00
+                        currency: EUR
+              partialOffer:
+                summary: Partial job offer (requires partialSaveEnabled)
+                value:
+                  title: "Backend Developer"
+                  location:
+                    type: COMPANY_ADDRESS
+      responses:
+        "201":
+          description: Job offer created successfully
+          headers:
+            Location:
+              description: URL of the created resource
+              schema:
+                type: string
+                format: uri
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobOffer"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /job-offers/{jobOfferId}:
+    parameters:
+      - $ref: "#/components/parameters/JobOfferId"
+      - $ref: "#/components/parameters/CompanyIdHeader"
+
+    get:
+      operationId: getJobOffer
+      summary: Get a job offer by ID
+      description: |
+        Returns the full details of a job offer including computed fields
+        like `availableTransitions`.
+      tags:
+        - Job Offers
+      responses:
+        "200":
+          description: Job offer details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobOffer"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    put:
+      operationId: updateJobOffer
+      summary: Update a job offer
+      description: |
+        Updates an existing job offer. Only allowed when the offer is in
+        DRAFT or TO_FINALIZE status.
+      tags:
+        - Job Offers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateJobOfferRequest"
+      responses:
+        "200":
+          description: Job offer updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobOffer"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Cannot update - offer is not in an editable state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: INVALID_STATE
+                message: "Cannot update job offer in PUBLISHED status"
+                details:
+                  currentStatus: PUBLISHED
+                  allowedStatuses:
+                    - DRAFT
+                    - TO_FINALIZE
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+    delete:
+      operationId: deleteJobOffer
+      summary: Delete a job offer
+      description: |
+        Permanently deletes a job offer. Only allowed when the offer is in
+        DRAFT status.
+      tags:
+        - Job Offers
+      responses:
+        "204":
+          description: Job offer deleted successfully
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Cannot delete - offer is not in DRAFT status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /job-offers/{jobOfferId}/transitions:
+    parameters:
+      - $ref: "#/components/parameters/JobOfferId"
+      - $ref: "#/components/parameters/CompanyIdHeader"
+
+    get:
+      operationId: getAvailableTransitions
+      summary: Get available state transitions
+      description: |
+        Returns the list of valid transitions from the current state,
+        considering the company's workflow configuration.
+      tags:
+        - Transitions
+      responses:
+        "200":
+          description: List of available transitions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AvailableTransitions"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /job-offers/{jobOfferId}/transitions/{action}:
+    parameters:
+      - $ref: "#/components/parameters/JobOfferId"
+      - $ref: "#/components/parameters/CompanyIdHeader"
+      - name: action
+        in: path
+        required: true
+        description: The transition action to perform
+        schema:
+          $ref: "#/components/schemas/TransitionAction"
+
+    post:
+      operationId: transitionJobOffer
+      summary: Perform a state transition
+      description: |
+        Transitions the job offer to a new state. The action must be valid
+        for the current state and company configuration.
+
+        Some transitions may require additional data in the request body
+        (e.g., rejection reason for `reject`).
+      tags:
+        - Transitions
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransitionRequest"
+            examples:
+              simpleTransition:
+                summary: Simple transition (no additional data)
+                value: {}
+              rejection:
+                summary: Rejection with reason
+                value:
+                  reason: "Budget constraints - please revise salary range"
+      responses:
+        "200":
+          description: Transition completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobOffer"
+        "400":
+          description: Invalid transition for current state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: INVALID_TRANSITION
+                message: "Cannot perform 'approve' from DRAFT status"
+                details:
+                  currentStatus: DRAFT
+                  requestedAction: approve
+                  validActions:
+                    - submit
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          description: Transition requirements not met
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: INCOMPLETE_OFFER
+                message: "Cannot submit incomplete job offer"
+                details:
+                  missingFields:
+                    - compensation
+
+  /job-offers/{jobOfferId}/history:
+    parameters:
+      - $ref: "#/components/parameters/JobOfferId"
+      - $ref: "#/components/parameters/CompanyIdHeader"
+
+    get:
+      operationId: getJobOfferHistory
+      summary: Get state transition history
+      description: Returns the audit log of all state transitions for this job offer.
+      tags:
+        - Transitions
+      responses:
+        "200":
+          description: Transition history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TransitionHistoryEntry"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /companies/{companyId}/configuration:
+    parameters:
+      - name: companyId
+        in: path
+        required: true
+        description: Company UUID
+        schema:
+          type: string
+          format: uuid
+      - $ref: "#/components/parameters/CompanyIdHeader"
+
+    get:
+      operationId: getCompanyConfiguration
+      summary: Get company workflow configuration
+      description: Returns the current workflow configuration for the specified company.
+      tags:
+        - Configuration
+      responses:
+        "200":
+          description: Company configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanyConfiguration"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Not authorized to access this company's configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    put:
+      operationId: updateCompanyConfiguration
+      summary: Update company workflow configuration
+      description: |
+        Updates the workflow configuration for the specified company.
+        Changes apply to newly created job offers; existing offers retain
+        their original workflow.
+      tags:
+        - Configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCompanyConfigurationRequest"
+      responses:
+        "200":
+          description: Configuration updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanyConfiguration"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Not authorized to modify this company's configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  parameters:
+    CompanyIdHeader:
+      name: X-Company-Id
+      in: header
+      required: true
+      description: UUID of the company context for this request
+      schema:
+        type: string
+        format: uuid
+      example: "550e8400-e29b-41d4-a716-446655440000"
+
+    JobOfferId:
+      name: jobOfferId
+      in: path
+      required: true
+      description: UUID of the job offer
+      schema:
+        type: string
+        format: uuid
+
+    PageNumber:
+      name: page
+      in: query
+      description: Page number (0-indexed)
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+
+    PageSize:
+      name: size
+      in: query
+      description: Number of items per page
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
+  schemas:
+    JobOfferStatus:
+      type: string
+      enum:
+        - DRAFT
+        - TO_FINALIZE
+        - TO_APPROVE
+        - TO_POST
+        - PUBLISHED
+        - CLOSED
+      description: |
+        Possible states of a job offer:
+        - `DRAFT`: Initial state, offer can be edited
+        - `TO_FINALIZE`: Partial save, waiting for completion (optional)
+        - `TO_APPROVE`: Waiting for approval (optional)
+        - `TO_POST`: Approved, waiting for manual posting (optional)
+        - `PUBLISHED`: Live and visible on job boards
+        - `CLOSED`: No longer accepting applications
+
+    TransitionAction:
+      type: string
+      enum:
+        - submit
+        - finalize
+        - approve
+        - reject
+        - post
+        - close
+        - reopen
+        - withdraw
+      description: |
+        Actions that can trigger state transitions:
+        - `submit`: DRAFT → TO_FINALIZE/TO_APPROVE/TO_POST/PUBLISHED
+        - `finalize`: TO_FINALIZE → TO_APPROVE/TO_POST/PUBLISHED
+        - `approve`: TO_APPROVE → TO_POST/PUBLISHED
+        - `reject`: TO_APPROVE → DRAFT
+        - `post`: TO_POST → PUBLISHED
+        - `close`: PUBLISHED → CLOSED
+        - `reopen`: CLOSED → PUBLISHED
+        - `withdraw`: Any active state → DRAFT
+
+    LocationType:
+      type: string
+      enum:
+        - COMPANY_ADDRESS
+        - CUSTOM
+      description: |
+        Type of job location:
+        - `COMPANY_ADDRESS`: Use the company's registered address
+        - `CUSTOM`: Use a custom address specified in the offer
+
+    SalaryType:
+      type: string
+      enum:
+        - HOURLY
+        - DAILY
+        - MONTHLY
+        - YEARLY
+
+    BonusType:
+      type: string
+      enum:
+        - SIGNING
+        - PERFORMANCE
+        - ANNUAL
+        - OTHER
+
+    Address:
+      type: object
+      required:
+        - city
+        - countryCode
+      properties:
+        lines:
+          type: array
+          description: Address lines (street, building, etc.)
+          maxItems: 3
+          items:
+            type: string
+            maxLength: 100
+        postalCode:
+          type: string
+          maxLength: 20
+        city:
+          type: string
+          maxLength: 100
+        region:
+          type: string
+          maxLength: 100
+          description: State, province, or region
+        countryCode:
+          type: string
+          pattern: "^[A-Z]{2}$"
+          description: ISO 3166-1 alpha-2 country code
+          example: FR
+
+    Location:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          $ref: "#/components/schemas/LocationType"
+        address:
+          $ref: "#/components/schemas/Address"
+      description: |
+        When `type` is `CUSTOM`, the `address` field is required.
+        When `type` is `COMPANY_ADDRESS`, the `address` field is ignored.
+
+    SalaryEntry:
+      type: object
+      required:
+        - type
+        - amount
+        - currency
+      properties:
+        type:
+          $ref: "#/components/schemas/SalaryType"
+        amount:
+          type: number
+          format: decimal
+          minimum: 0
+          description: Salary amount
+          example: 65000.00
+        currency:
+          type: string
+          pattern: "^[A-Z]{3}$"
+          description: ISO 4217 currency code
+          example: EUR
+
+    BonusEntry:
+      type: object
+      required:
+        - type
+        - amount
+        - currency
+      properties:
+        type:
+          $ref: "#/components/schemas/BonusType"
+        amount:
+          type: number
+          format: decimal
+          minimum: 0
+          description: Bonus amount
+          example: 5000.00
+        currency:
+          type: string
+          pattern: "^[A-Z]{3}$"
+          description: ISO 4217 currency code
+          example: EUR
+        description:
+          type: string
+          maxLength: 200
+          description: Additional details (especially for OTHER type)
+
+    Compensation:
+      type: object
+      properties:
+        salaryEntries:
+          type: array
+          items:
+            $ref: "#/components/schemas/SalaryEntry"
+        bonusEntries:
+          type: array
+          items:
+            $ref: "#/components/schemas/BonusEntry"
+      description: At least one salary or bonus entry is required for a complete offer
+
+    JobOffer:
+      type: object
+      required:
+        - id
+        - companyId
+        - title
+        - status
+        - location
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        companyId:
+          type: string
+          format: uuid
+          readOnly: true
+        title:
+          type: string
+          maxLength: 200
+        status:
+          $ref: "#/components/schemas/JobOfferStatus"
+          readOnly: true
+        location:
+          $ref: "#/components/schemas/Location"
+        compensation:
+          $ref: "#/components/schemas/Compensation"
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedAt:
+          type: string
+          format: date-time
+          readOnly: true
+        publishedAt:
+          type: string
+          format: date-time
+          nullable: true
+          readOnly: true
+        closedAt:
+          type: string
+          format: date-time
+          nullable: true
+          readOnly: true
+        availableTransitions:
+          type: array
+          items:
+            $ref: "#/components/schemas/TransitionAction"
+          readOnly: true
+          description: List of valid transition actions from current state
+        isComplete:
+          type: boolean
+          readOnly: true
+          description: Whether the offer has all required fields for publishing
+
+    JobOfferSummary:
+      type: object
+      description: Lightweight representation for list views
+      required:
+        - id
+        - companyId
+        - title
+        - status
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        companyId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        status:
+          $ref: "#/components/schemas/JobOfferStatus"
+        locationCity:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        publishedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    JobOfferPage:
+      type: object
+      required:
+        - content
+        - page
+        - size
+        - totalElements
+        - totalPages
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/JobOfferSummary"
+        page:
+          type: integer
+          description: Current page number (0-indexed)
+        size:
+          type: integer
+          description: Page size
+        totalElements:
+          type: integer
+          format: int64
+          description: Total number of matching job offers
+        totalPages:
+          type: integer
+          description: Total number of pages
+
+    CreateJobOfferRequest:
+      type: object
+      required:
+        - title
+        - location
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        location:
+          $ref: "#/components/schemas/Location"
+        compensation:
+          $ref: "#/components/schemas/Compensation"
+
+    UpdateJobOfferRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        location:
+          $ref: "#/components/schemas/Location"
+        compensation:
+          $ref: "#/components/schemas/Compensation"
+
+    TransitionRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          maxLength: 500
+          description: Required for `reject` action, optional for others
+        comment:
+          type: string
+          maxLength: 1000
+          description: Optional comment to include in audit history
+
+    AvailableTransitions:
+      type: object
+      required:
+        - currentStatus
+        - transitions
+      properties:
+        currentStatus:
+          $ref: "#/components/schemas/JobOfferStatus"
+        transitions:
+          type: array
+          items:
+            type: object
+            required:
+              - action
+              - targetStatus
+            properties:
+              action:
+                $ref: "#/components/schemas/TransitionAction"
+              targetStatus:
+                $ref: "#/components/schemas/JobOfferStatus"
+              requiresReason:
+                type: boolean
+                default: false
+
+    TransitionHistoryEntry:
+      type: object
+      required:
+        - id
+        - fromStatus
+        - toStatus
+        - action
+        - performedAt
+        - performedBy
+      properties:
+        id:
+          type: string
+          format: uuid
+        fromStatus:
+          $ref: "#/components/schemas/JobOfferStatus"
+        toStatus:
+          $ref: "#/components/schemas/JobOfferStatus"
+        action:
+          $ref: "#/components/schemas/TransitionAction"
+        performedAt:
+          type: string
+          format: date-time
+        performedBy:
+          type: string
+          description: User identifier who performed the transition
+        reason:
+          type: string
+          nullable: true
+        comment:
+          type: string
+          nullable: true
+
+    CompanyConfiguration:
+      type: object
+      required:
+        - companyId
+        - approvalRequired
+        - partialSaveEnabled
+        - manualPostingRequired
+        - updatedAt
+      properties:
+        companyId:
+          type: string
+          format: uuid
+        approvalRequired:
+          type: boolean
+          default: false
+          description: When true, offers go through TO_APPROVE state
+        partialSaveEnabled:
+          type: boolean
+          default: false
+          description: When true, offers can be saved incomplete (TO_FINALIZE)
+        manualPostingRequired:
+          type: boolean
+          default: false
+          description: When true, offers wait in TO_POST instead of auto-publishing
+        updatedAt:
+          type: string
+          format: date-time
+          readOnly: true
+
+    UpdateCompanyConfigurationRequest:
+      type: object
+      properties:
+        approvalRequired:
+          type: boolean
+        partialSaveEnabled:
+          type: boolean
+        manualPostingRequired:
+          type: boolean
+
+    Error:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          description: Machine-readable error code
+          example: VALIDATION_ERROR
+        message:
+          type: string
+          description: Human-readable error message
+          example: "Validation failed for field 'title'"
+        details:
+          type: object
+          additionalProperties: true
+          description: Additional error context
+        traceId:
+          type: string
+          description: Request trace ID for debugging
+          example: "abc123-def456"
+
+    ValidationError:
+      type: object
+      required:
+        - code
+        - message
+        - fieldErrors
+      properties:
+        code:
+          type: string
+          example: VALIDATION_ERROR
+        message:
+          type: string
+          example: "Request validation failed"
+        fieldErrors:
+          type: array
+          items:
+            type: object
+            required:
+              - field
+              - message
+            properties:
+              field:
+                type: string
+                description: JSON path to the invalid field
+                example: "compensation.salaryEntries[0].amount"
+              message:
+                type: string
+                example: "must be greater than or equal to 0"
+              rejectedValue:
+                description: The value that was rejected
+
+  responses:
+    BadRequest:
+      description: Invalid request syntax or parameters
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            code: BAD_REQUEST
+            message: "Invalid sort parameter: 'invalid'"
+
+    Unauthorized:
+      description: Missing or invalid X-Company-Id header
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            code: UNAUTHORIZED
+            message: "Missing required header: X-Company-Id"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            code: NOT_FOUND
+            message: "Job offer not found: 550e8400-e29b-41d4-a716-446655440000"
+
+    ValidationError:
+      description: Request body validation failed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ValidationError"
+          example:
+            code: VALIDATION_ERROR
+            message: "Request validation failed"
+            fieldErrors:
+              - field: title
+                message: "must not be blank"
+              - field: location.address.countryCode
+                message: "must match pattern '^[A-Z]{2}$'"
+                rejectedValue: "France"
