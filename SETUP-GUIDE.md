@@ -181,9 +181,14 @@ development: {
 
 ```bash
 npm run sqlz -- db:create
+npm run sqlz -- db:migrate       # create the tables — the app also syncs on boot,
+                                 # but seeding below needs the tables to exist first
 npm run sqlz -- db:seed:all      # optional dummy data
 npm run dev                      # frontend :3000, backend :3001
 ```
+
+> If you skip `db:migrate` and run `db:seed:all` first, you'll get
+> `ERROR: relation "Users" does not exist` — the seeders need the tables to exist.
 
 Then run the E2E suite with default URLs:
 
