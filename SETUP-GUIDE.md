@@ -180,15 +180,25 @@ development: {
 **4. Create the DB, seed, and start:**
 
 ```bash
-npm run sqlz -- db:create
-npm run sqlz -- db:migrate       # create the tables — the app also syncs on boot,
-                                 # but seeding below needs the tables to exist first
-npm run sqlz -- db:seed:all      # optional dummy data
-npm run dev                      # frontend :3000, backend :3001
+npm run sqlz -- db:create        # create the database
+npm run dev                      # start the app — its sync({ alter: true }) builds the
+                                 # FULL schema, including association columns the seeders
+                                 # need (e.g. Articles.userId). Wait for
+                                 # "Server running on http://localhost:3001".
 ```
 
-> If you skip `db:migrate` and run `db:seed:all` first, you'll get
-> `ERROR: relation "Users" does not exist` — the seeders need the tables to exist.
+**Seeding is optional and the E2E suite does NOT need it** (tests self-register and
+create their own data). If you want sample data for manual browsing, run this in a
+**second terminal, after the app is already running**:
+
+```bash
+npm run sqlz -- db:seed:all
+```
+
+> Gotcha: the migrations alone don't create the association columns — those are added
+> by the app's `sync` on boot. Seeding **before** starting the app fails with
+> `relation "Users" does not exist` or `column "userId" of relation "Articles" does
+> not exist`. Always start the app first (or just skip seeding).
 
 Then run the E2E suite with default URLs:
 
