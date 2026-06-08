@@ -201,11 +201,12 @@ npm run sqlz -- db:seed:all
 > not exist`. Always start the app first (or just skip seeding).
 
 `npm run dev` keeps that terminal busy (it stays running). Leave it open and, **in a
-new terminal**, run the E2E suite against the now-running app (default URLs):
+new terminal**, go to the E2E repo you cloned in Part 2 (`cd` into it wherever it
+lives on your machine) and run the suite against the now-running app:
 
 ```bash
-cd ../real_work_example_test_framework
-npx playwright test              # → 10 passed
+cd /path/to/real_work_example_test_framework   # the repo cloned in Part 2
+npx playwright test                            # → 10 passed (default URLs :3000/:3001)
 ```
 
 ## Notes / known app quirks (surfaced by the E2E tests)
