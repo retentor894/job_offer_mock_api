@@ -10,7 +10,7 @@ suite pass. Two parts, three repositories, four runnable test layers.
 | 1 | Mock API — functional smoke | `job_offer_mock_api` | `npm test` | **54 passed** |
 | 2 | Mock API — contract conformance | `job_offer_mock_api` | `./contract-tests/run-schemathesis.sh` | **~2000 passed, 2 warnings** |
 | 3 | Part 1 — API test suite | `job_offer_API_testing_framework` | `npx playwright test` | **70 passed** |
-| 4 | Part 2 — E2E suite (against a **local** Conduit) | `real_work_example_test_framework` | `npx playwright test` | **10 passed** |
+| 4 | Part 2 — E2E suite (against a **local** Conduit) | `real_world_example_test_framework` | `npx playwright test` | **10 passed** |
 
 ## Prerequisites
 
@@ -28,7 +28,7 @@ mkdir qa-homework && cd qa-homework      # your workspace — run all commands f
 
 git clone https://github.com/retentor894/job_offer_mock_api.git
 git clone https://github.com/retentor894/job_offer_API_testing_framework.git
-git clone https://github.com/retentor894/real_work_example_test_framework.git
+git clone https://github.com/retentor894/real_world_example_test_framework.git
 git clone https://github.com/TonyMckes/conduit-realworld-example-app.git   # Part 2 only
 ```
 
@@ -38,7 +38,7 @@ Resulting layout (all siblings under `qa-homework/`):
 qa-homework/
 ├── job_offer_mock_api/
 ├── job_offer_API_testing_framework/
-├── real_work_example_test_framework/
+├── real_world_example_test_framework/
 └── conduit-realworld-example-app/
 ```
 
@@ -167,7 +167,7 @@ npm run dev                      # start the app — its sync({ alter: true }) b
 With Conduit running (Step 3), open a **new terminal** (from `qa-homework/`):
 
 ```bash
-cd real_work_example_test_framework
+cd real_world_example_test_framework
 npm install
 npx playwright install chromium  # downloads the browser (~one time)
 npx playwright test              # → 10 passed (default URLs :3000/:3001)
@@ -230,5 +230,5 @@ docker run --name conduit-pg -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=post
 # ...create backend/.env + patch config.js (Step 3)...
 npm run sqlz -- db:create && npm run dev      # leave running
 # then in a 5th terminal:
-cd real_work_example_test_framework && npm install && npx playwright install chromium && npx playwright test
+cd real_world_example_test_framework && npm install && npx playwright install chromium && npx playwright test
 ```
