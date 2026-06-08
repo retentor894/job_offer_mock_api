@@ -10,7 +10,7 @@ suite pass. Two parts, three repositories, four runnable test layers.
 | 1 | Mock API — functional smoke | `job_offer_mock_api` | `npm test` | **54 passed** |
 | 2 | Mock API — contract conformance | `job_offer_mock_api` | `./contract-tests/run-schemathesis.sh` | **~2000 passed, 2 warnings** |
 | 3 | Part 1 — API test suite | `job_offer_API_testing_framework` | `npx playwright test` | **70 passed** |
-| 4 | Part 2 — E2E suite | `real_work_example_test_framework` | `npx playwright test` | **10 passed** |
+| 4 | Part 2 — E2E suite (against a **local** Conduit) | `real_work_example_test_framework` | `npx playwright test` | **10 passed** |
 
 Repositories:
 - https://github.com/retentor894/job_offer_mock_api
@@ -74,29 +74,35 @@ npx playwright test           # → 70 passed
 
 # Part 2 — Conduit E2E suite (Playwright)
 
-You have two options. **Option A (live demo) needs zero local infrastructure** and
-is the fastest way to see the suite run. Option B runs against a local Conduit
-(Appendix B).
-
-## Step 3 — Option A: run against the live demo (recommended)
-
 ```bash
 git clone https://github.com/retentor894/real_work_example_test_framework.git
 cd real_work_example_test_framework
 npm install
 npx playwright install chromium          # downloads the browser (~one time)
-
-BASE_URL=https://conduit-realworld-example-app.fly.dev \
-API_URL=https://conduit-realworld-example-app.fly.dev/api \
-  npx playwright test                    # → 10 passed
 ```
 
-The tests are self-contained: each creates its own unique user and data, so they
-run cleanly against the shared demo. HTML report: `npm run report`.
+## Step 3 — Run against a local Conduit (reliable, full green run)
 
-> Against a **local** Conduit instead, drop the env vars (defaults are
-> `http://localhost:3000` / `http://localhost:3001/api`) — see Appendix B to get
-> Conduit running locally.
+The tests are self-contained: each creates its own unique user and data. For a
+**complete 10/10 run**, point them at a local Conduit instance:
+
+```bash
+# 1. Start Conduit locally first — see Appendix B (Docker Postgres + the app)
+# 2. Then, with the app on :3000 / :3001:
+npx playwright test                      # → 10 passed
+```
+
+HTML report: `npm run report`.
+
+### About the public live demo
+
+There is a hosted demo, and the suite can target it
+(`npm run test:demo`). **However, the demo heavily rate-limits registration**
+(~5 requests/hour, HTTP 429 with `Retry-After` up to ~1h). Because the suite
+self-registers ~13 users, it **cannot complete against the demo** — a few tests
+pass, then the rest hit 429. Use the demo only for a quick partial smoke, or point
+the suite at your own un-throttled deployment. **For a full run, use a local
+instance (Appendix B).**
 
 ---
 
@@ -115,21 +121,20 @@ cd job_offer_mock_api && npm test
 git clone https://github.com/retentor894/job_offer_API_testing_framework.git
 cd job_offer_API_testing_framework && npm install && npx playwright test
 
-# Terminal 4: Part 2 E2E against the live demo
+# Terminal 4: Part 2 E2E (needs a local Conduit running — see Appendix B)
 git clone https://github.com/retentor894/real_work_example_test_framework.git
 cd real_work_example_test_framework && npm install && npx playwright install chromium
-BASE_URL=https://conduit-realworld-example-app.fly.dev \
-API_URL=https://conduit-realworld-example-app.fly.dev/api npx playwright test
+npx playwright test     # → 10 passed (against local Conduit on :3000/:3001)
 ```
 
 ---
 
-# Appendix B — Running Conduit locally (optional)
+# Appendix B — Running Conduit locally (for the full Part 2 run)
 
-Only needed if you want to run the E2E suite against a local app instead of the
-live demo. The upstream repo has **no Docker** and needs a SQL database; the steps
-below use Postgres in a container. Two small config fixes are required (the repo's
-defaults are inconsistent).
+This is the recommended way to get a complete 10/10 E2E run (the public demo
+rate-limits registration — see Part 2). The upstream repo has **no Docker** and
+needs a SQL database; the steps below use Postgres in a container. Two small config
+fixes are required (the repo's defaults are inconsistent).
 
 ```bash
 git clone https://github.com/TonyMckes/conduit-realworld-example-app.git
