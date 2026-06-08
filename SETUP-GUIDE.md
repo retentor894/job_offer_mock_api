@@ -10,7 +10,7 @@ suite pass. Two parts, three repositories, four runnable test layers.
 | 1 | Mock API — functional smoke | `job_offer_mock_api` | `npm test` | **54 passed** |
 | 2 | Mock API — contract conformance | `job_offer_mock_api` | `./contract-tests/run-schemathesis.sh` | **~2000 passed, 2 warnings** |
 | 3 | Part 1 — API test suite | `job_offer_API_testing_framework` | `npx playwright test` | **70 passed** |
-| 4 | Part 2 — E2E suite | `real_work_example_test_framework` | `npx playwright test` | **8 passed** |
+| 4 | Part 2 — E2E suite | `real_work_example_test_framework` | `npx playwright test` | **10 passed** |
 
 Repositories:
 - https://github.com/retentor894/job_offer_mock_api
@@ -88,7 +88,7 @@ npx playwright install chromium          # downloads the browser (~one time)
 
 BASE_URL=https://conduit-realworld-example-app.fly.dev \
 API_URL=https://conduit-realworld-example-app.fly.dev/api \
-  npx playwright test                    # → 8 passed
+  npx playwright test                    # → 10 passed
 ```
 
 The tests are self-contained: each creates its own unique user and data, so they
@@ -184,7 +184,7 @@ Then run the E2E suite with default URLs:
 
 ```bash
 cd ../real_work_example_test_framework
-npx playwright test              # → 8 passed
+npx playwright test              # → 10 passed
 ```
 
 ## Notes / known app quirks (surfaced by the E2E tests)
